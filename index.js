@@ -28,6 +28,7 @@ export async function connectToMongoDB() {
 const mongoClient= await  connectToMongoDB();
 const database = mongoClient.db('salonbookDb');
 const users = database.collection('user');
+const services = database.collection('services');
 
 app.get('/', (req, res) => {
   res.send('Hello saloon server World!')
@@ -36,6 +37,14 @@ app.get('/', (req, res) => {
 app.get('/users', async (req, res) => {
     const cursor = users.find({});
     const result = await cursor.toArray();
+    res.send(result);
+})
+
+// services related api
+
+app.post('/services', async (req, res) => {
+    const services = req.body;
+    const result = await services.insertOne(services);
     res.send(result);
 })
 
