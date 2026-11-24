@@ -25,7 +25,7 @@ export async function connectToMongoDB() {
   }
 }
 
-const mongoClient= await  connectToMongoDB();
+const mongoClient = await connectToMongoDB();
 const database = mongoClient.db('salonbookDb');
 const users = database.collection('user');
 const services = database.collection('services');
@@ -35,30 +35,120 @@ app.get('/', (req, res) => {
 })
 
 app.get('/users', async (req, res) => {
-    const cursor = users.find({});
-    const result = await cursor.toArray();
-    res.send(result);
+  const cursor = users.find({});
+  const result = await cursor.toArray();
+  res.send(result);
 })
 
 // services related api
 
 
 app.get('/services', async (req, res) => {
-    const cursor = services.find({});
-    const result = await cursor.toArray();
+    const query = {};
+
+    // Search by name
+    if (req.query.name) {
+        query.name = {
+            $regex: req.query.name,
+            $options: 'i'
+        };
+    }
+
+    // Category filter
+    if (req.query.category) {
+        query.category = {
+            $regex: `^${req.query.category}$`,
+            $options: 'i'
+        };
+    }
+
+    // Price filter
+    if (req.query.price === 'under-500') {
+        query.price = { $lt: 500 };
+    }
+    else if (req.query.price === '500-1000') {
+        query.price = { $gte: 500, $lte: 1000 };
+    }
+    else if (req.query.price === '1000-2000') {
+        query.price = { $gte: 1000, $lte: 2000 };
+    }
+    else if (req.query.price === 'over-2000') {
+        query.price = { $gt: 2000 };
+    }
+
+    // Duration filter
+    if (req.query.duration === 'under-30') {
+        query.duration = { $lt: 30 };
+    }
+    else if (req.query.duration === '30-60') {
+        query.duration = { $gte: 30, $lte: 60 };
+    }
+    else if (req.query.duration === '60-90') {
+        query.duration = { $gte: 60, $lte: 90 };
+    }
+    else if (req.query.duration === 'over-90') {
+        query.duration = { $gt: 90 };
+    }
+
+    // Sort
+    const sortOptions = {
+        newest: { createdAt: -1 },
+        'price-asc': { price: 1 },
+        'price-desc': { price: -1 },
+        'duration-asc': { duration: 1 },
+        'duration-desc': { duration: -1 }
+    };
+
+    const sort = sortOptions[req.query.sort] || sortOptions.newest;
+
+    const result = await services
+        .find(query)
+        .sort(sort)
+        .toArray();
+
     res.send(result);
-})
-app.post('/services', async (req, res) => {
-    const services = req.body;
-    const result = await services.insertOne(services);
-    res.send(result);
-})
+});
+
+
+
+app.get("/services/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate MongoDB ObjectId
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        message: "Invalid service ID",
+      });
+    }
+
+    const service = await services.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!service) {
+      return res.status(404).send({
+        message: "Service not found",
+      });
+    }
+
+    res.send(service);
+
+  } catch (error) {
+    console.error("Get service error:", error);
+
+    res.status(500).send({
+      message: "Internal server error",
+    });
+  }
+});
+
 
 app.delete('/services/:id', async (req, res) => {
-    const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
-    const result = await services.deleteOne(query);
-    res.send(result);
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await services.deleteOne(query);
+  res.send(result);
 })
 
 app.listen(port, () => {
