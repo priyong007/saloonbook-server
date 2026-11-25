@@ -29,6 +29,7 @@ const mongoClient = await connectToMongoDB();
 const database = mongoClient.db('salonbookDb');
 const users = database.collection('user');
 const services = database.collection('services');
+const appointments = database.collection('appointments')
 
 app.get('/', (req, res) => {
   res.send('Hello saloon server World!')
@@ -144,12 +145,39 @@ app.get("/services/:id", async (req, res) => {
 });
 
 
+
 app.delete('/services/:id', async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
   const result = await services.deleteOne(query);
   res.send(result);
 })
+
+
+// appointments related api
+
+app.post('/appointments', async (req, res) => {
+  try {
+    const appointmentData = req.body;
+
+    const result = await appointments.insertOne(appointmentData);
+
+    res.status(201).send({
+      success: true,
+      message: "Appointment booked successfully",
+      insertedId: result.insertedId,
+    });
+
+  } catch (error) {
+    console.error("Appointment booking error:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to book appointment",
+    });
+  }
+});
+
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`)
