@@ -156,9 +156,56 @@ app.delete('/services/:id', async (req, res) => {
 
 // appointments related api
 
+
+
+app.get('/my-appointments', async (req, res) => {
+    try {
+        const userId = req.query.userId;
+
+        if (!userId) {
+            return res.status(400).send({
+                success: false,
+                message: "User ID is required"
+            });
+        }
+
+        const query = {
+            userId: userId
+        };
+
+        const result = await appointments
+            .find(query)
+            .toArray();
+
+        res.send({
+            success: true,
+            result
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).send({
+            success: false,
+            message: "Failed to fetch appointments"
+        });
+    }
+});
+
+
+
+
+
+
 app.post('/appointments', async (req, res) => {
   try {
-    const appointmentData = req.body;
+    const appointmentData = {
+  ...req.body,
+  status: "pending",
+  appointmentStatus: "pending",
+  paymentStatus: "unpaid",
+  createdAt: new Date(),
+};
 
     const result = await appointments.insertOne(appointmentData);
 
@@ -177,6 +224,93 @@ app.post('/appointments', async (req, res) => {
     });
   }
 });
+
+
+
+
+app.get('/appointments/count', async (req, res) => {
+  try {
+    const query = {};
+
+    if (req.query.git) {
+      query.userId = req.query.userId;
+    }
+
+    const result = await appointments.countDocuments(query);
+
+    res.send({ count: result });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({
+      success: false,
+      message: "Failed to count appointments",
+    });
+  }
+});
+
+
+
+// Cancel appointment
+
+
+app.patch('/appointments/:id/cancel', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid appointment ID",
+      });
+    }
+
+    const result = await appointments.updateOne(
+      {
+        _id: new ObjectId(id),
+        $or: [
+          { status: "pending" },
+          { appointmentStatus: "pending" },
+          {
+            status: { $exists: false },
+            appointmentStatus: { $exists: false },
+          },
+        ],
+      },
+      {
+        $set: {
+          status: "cancelled",
+          appointmentStatus: "cancelled",
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({
+        success: false,
+        message: "Appointment not found or cannot be cancelled",
+      });
+    }
+
+    res.send({
+      success: true,
+      message: "Appointment cancelled successfully",
+    });
+
+  } catch (error) {
+    console.error("Cancel appointment error:", error);
+
+    res.status(500).send({
+      success: false,
+      message: "Failed to cancel appointment",
+    });
+  }
+});
+
+
+
+
 
 
 app.listen(port, () => {
