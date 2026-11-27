@@ -2,6 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
 import { MongoClient, ObjectId } from 'mongodb';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -30,6 +34,7 @@ const database = mongoClient.db('salonbookDb');
 const users = database.collection('user');
 const services = database.collection('services');
 const appointments = database.collection('appointments')
+const payments = database.collection('payments')
 
 app.get('/', (req, res) => {
   res.send('Hello saloon server World!')
@@ -308,6 +313,126 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
   }
 });
 
+//payment related api
+
+
+app.post('/payments/checkout-varify', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+
+    // 1. Validate session ID
+    if (!sessionId) {
+      return res.status(400).send({
+        success: false,
+        message: 'Session ID is required',
+      });
+    }
+
+    // 2. Retrieve session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    const {
+      status,
+      payment_status,
+      customer_email,
+      metadata,
+      payment_intent,
+    } = session;
+
+    // 3. Check payment status
+    if (status !== 'complete' || payment_status !== 'paid') {
+      return res.status(400).send({
+        success: false,
+        message: 'Payment verification failed',
+      });
+    }
+
+    // 4. Validate metadata
+    if (!metadata?.userId || !metadata?.appointmentId) {
+      return res.status(400).send({
+        success: false,
+        message: 'Invalid payment metadata',
+      });
+    }
+
+    if (
+      !ObjectId.isValid(metadata.userId) ||
+      !ObjectId.isValid(metadata.appointmentId)
+    ) {
+      return res.status(400).send({
+        success: false,
+        message: 'Invalid user or appointment ID',
+      });
+    }
+
+    // 5. Check duplicate payment
+    const existingPayment = await payments.findOne({ sessionId });
+
+    if (existingPayment) {
+      return res.send({
+        success: true,
+        message: 'Payment already verified',
+        payment: existingPayment,
+      });
+    }
+
+    // 6. Find appointment
+    const appointment = await appointments.findOne({
+      _id: new ObjectId(metadata.appointmentId),
+      userId: metadata.userId,
+    });
+
+    if (!appointment) {
+      return res.status(404).send({
+        success: false,
+        message: 'Appointment not found',
+      });
+    }
+
+    // 7. Save payment information
+    const payment = {
+      sessionId,
+      status,
+      paymentStatus: payment_status,
+      customerEmail: customer_email,
+      userId: metadata.userId,
+      appointmentId: metadata.appointmentId,
+      paymentIntent: payment_intent,
+      paymentDate: new Date(),
+    };
+
+    const result = await payments.insertOne(payment);
+
+    // 8. Update appointment payment status
+    await appointments.updateOne(
+      {
+        _id: new ObjectId(metadata.appointmentId),
+        userId: metadata.userId,
+      },
+      {
+        $set: {
+          paymentStatus: 'paid',
+          paymentId: result.insertedId,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    return res.send({
+      success: true,
+      message: 'Payment verified successfully',
+      paymentId: result.insertedId,
+    });
+
+  } catch (error) {
+    console.error('Payment verification error:', error);
+
+    res.status(500).send({
+      success: false,
+      message: 'Payment verification failed',
+    });
+  }
+});
 
 
 
